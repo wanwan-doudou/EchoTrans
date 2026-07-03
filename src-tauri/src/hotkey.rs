@@ -9,7 +9,7 @@ use std::{
 use rdev::{Event, EventType, Key};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition};
 
-use crate::{config::ConfigState, mt, translator};
+use crate::{config::ConfigState, mt, snip, translator, HotkeyState};
 
 /// 翻译请求代际号：连续触发时，让旧的流式任务停止向弹窗推送
 static GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -19,43 +19,162 @@ const TRIPLE_WINDOW: Duration = Duration::from_millis(600);
 /// 防止误触超长文本消耗过多 token
 const MAX_CHARS: usize = 5000;
 
+/// 自定义组合键（截屏翻译），修饰键精确匹配避免误触发
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Hotkey {
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+    pub key: Key,
+}
+
+/// 解析 "Alt+W"、"Ctrl+Shift+S" 形式的组合键；必须包含至少一个修饰键和一个字母/数字
+pub fn parse_hotkey(s: &str) -> Option<Hotkey> {
+    let mut ctrl = false;
+    let mut alt = false;
+    let mut shift = false;
+    let mut key = None;
+
+    for part in s.split('+') {
+        let part = part.trim().to_lowercase();
+        match part.as_str() {
+            "ctrl" | "control" if !ctrl => ctrl = true,
+            "alt" if !alt => alt = true,
+            "shift" if !shift => shift = true,
+            _ => {
+                if key.is_some() {
+                    return None;
+                }
+                let mut chars = part.chars();
+                let c = chars.next()?;
+                if chars.next().is_some() {
+                    return None;
+                }
+                key = Some(char_to_key(c)?);
+            }
+        }
+    }
+
+    let key = key?;
+    if !(ctrl || alt || shift) {
+        return None;
+    }
+    Some(Hotkey {
+        ctrl,
+        alt,
+        shift,
+        key,
+    })
+}
+
+fn char_to_key(c: char) -> Option<Key> {
+    use Key::*;
+    Some(match c {
+        'a' => KeyA,
+        'b' => KeyB,
+        'c' => KeyC,
+        'd' => KeyD,
+        'e' => KeyE,
+        'f' => KeyF,
+        'g' => KeyG,
+        'h' => KeyH,
+        'i' => KeyI,
+        'j' => KeyJ,
+        'k' => KeyK,
+        'l' => KeyL,
+        'm' => KeyM,
+        'n' => KeyN,
+        'o' => KeyO,
+        'p' => KeyP,
+        'q' => KeyQ,
+        'r' => KeyR,
+        's' => KeyS,
+        't' => KeyT,
+        'u' => KeyU,
+        'v' => KeyV,
+        'w' => KeyW,
+        'x' => KeyX,
+        'y' => KeyY,
+        'z' => KeyZ,
+        '0' => Num0,
+        '1' => Num1,
+        '2' => Num2,
+        '3' => Num3,
+        '4' => Num4,
+        '5' => Num5,
+        '6' => Num6,
+        '7' => Num7,
+        '8' => Num8,
+        '9' => Num9,
+        _ => return None,
+    })
+}
+
+enum Trigger {
+    Translate,
+    Snip,
+}
+
 pub fn start(app: AppHandle) {
-    let (tx, rx) = mpsc::channel::<()>();
+    let (tx, rx) = mpsc::channel::<Trigger>();
 
     // 处理线程：键盘钩子回调内不能做耗时操作（Windows 会因超时移除钩子），
     // 触发信号丢到这里慢慢处理
+    let app_worker = app.clone();
     std::thread::spawn(move || {
-        while rx.recv().is_ok() {
-            handle_trigger(&app);
+        while let Ok(trigger) = rx.recv() {
+            match trigger {
+                Trigger::Translate => handle_clipboard_trigger(&app_worker),
+                Trigger::Snip => snip::open_overlay(&app_worker),
+            }
         }
     });
 
     // 监听线程：rdev 被动监听全局键盘，不拦截按键，系统复制功能不受影响
     std::thread::spawn(move || {
-        let mut ctrl_down = false;
+        let mut ctrl = false;
+        let mut alt = false;
+        let mut shift = false;
         let mut count: u32 = 0;
         let mut last = Instant::now();
 
         let result = rdev::listen(move |event: Event| match event.event_type {
-            EventType::KeyPress(Key::ControlLeft) | EventType::KeyPress(Key::ControlRight) => {
-                ctrl_down = true;
-            }
-            EventType::KeyRelease(Key::ControlLeft) | EventType::KeyRelease(Key::ControlRight) => {
-                ctrl_down = false;
-            }
-            EventType::KeyPress(Key::KeyC) if ctrl_down => {
-                let now = Instant::now();
-                if now.duration_since(last) <= TRIPLE_WINDOW {
-                    count += 1;
-                } else {
-                    count = 1;
+            EventType::KeyPress(k) => {
+                match k {
+                    Key::ControlLeft | Key::ControlRight => ctrl = true,
+                    Key::Alt | Key::AltGr => alt = true,
+                    Key::ShiftLeft | Key::ShiftRight => shift = true,
+                    _ => {}
                 }
-                last = now;
-                if count >= 3 {
-                    count = 0;
-                    let _ = tx.send(());
+
+                if k == Key::KeyC && ctrl {
+                    // 三连 Ctrl+C 翻译
+                    let now = Instant::now();
+                    if now.duration_since(last) <= TRIPLE_WINDOW {
+                        count += 1;
+                    } else {
+                        count = 1;
+                    }
+                    last = now;
+                    if count >= 3 {
+                        count = 0;
+                        let _ = tx.send(Trigger::Translate);
+                    }
+                } else if let Ok(guard) = app.state::<HotkeyState>().0.lock() {
+                    // 截屏翻译快捷键
+                    if let Some(hk) = *guard {
+                        if k == hk.key && ctrl == hk.ctrl && alt == hk.alt && shift == hk.shift {
+                            let _ = tx.send(Trigger::Snip);
+                        }
+                    }
                 }
             }
+            EventType::KeyRelease(k) => match k {
+                Key::ControlLeft | Key::ControlRight => ctrl = false,
+                Key::Alt | Key::AltGr => alt = false,
+                Key::ShiftLeft | Key::ShiftRight => shift = false,
+                _ => {}
+            },
             _ => {}
         });
 
@@ -65,18 +184,26 @@ pub fn start(app: AppHandle) {
     });
 }
 
-fn handle_trigger(app: &AppHandle) {
+fn handle_clipboard_trigger(app: &AppHandle) {
     // 第三次 Ctrl+C 的系统复制是异步完成的，稍等再读剪贴板
     std::thread::sleep(Duration::from_millis(250));
 
     let Some(text) = read_clipboard_text() else {
         return;
     };
-    let text = text.trim();
+    let text = text.trim().to_string();
     if text.is_empty() {
         return;
     }
+    translate_and_show(app, text, false);
+}
+
+/// 公共翻译管线：弹出悬浮窗，机翻与 AI 双通道并行。剪贴板与截屏 OCR 共用。
+pub fn translate_and_show(app: &AppHandle, text: String, is_ocr: bool) {
     let text: String = text.chars().take(MAX_CHARS).collect();
+    if text.trim().is_empty() {
+        return;
+    }
 
     let cfg = {
         let state = app.state::<ConfigState>();
@@ -88,16 +215,17 @@ fn handle_trigger(app: &AppHandle) {
     };
 
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    let use_machine = cfg.enable_machine && !is_ocr;
 
     show_popup_at_cursor(app);
     let _ = app.emit_to(
         "popup",
         "translate-start",
-        serde_json::json!({ "text": text, "model": cfg.model, "machine": cfg.enable_machine }),
+        serde_json::json!({ "text": text, "model": cfg.model, "machine": use_machine }),
     );
 
-    // 机器翻译通道：与 AI 并行，先出结果作对照
-    if cfg.enable_machine {
+    // OCR 文本可能残留错字，传统机翻会放大错误；仅对剪贴板原文提供快速对照
+    if use_machine {
         let app_mt = app.clone();
         let text_mt = text.clone();
         tauri::async_runtime::spawn(async move {
@@ -119,7 +247,7 @@ fn handle_trigger(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let emitter = app.clone();
-        let result = translator::translate_stream(&cfg, &text, move |delta| {
+        let result = translator::translate_stream(&cfg, &text, is_ocr, move |delta| {
             if GENERATION.load(Ordering::SeqCst) == generation {
                 let _ = emitter.emit_to("popup", "translate-chunk", delta);
             }
@@ -141,6 +269,26 @@ fn handle_trigger(app: &AppHandle) {
     });
 }
 
+/// 截屏 OCR 失败等场景：复用悬浮窗展示错误
+pub fn show_error_popup(app: &AppHandle, title: &str, msg: String) {
+    let model = app
+        .state::<ConfigState>()
+        .lock()
+        .map(|c| c.model.clone())
+        .unwrap_or_default();
+
+    // 作废进行中的流式任务，避免旧内容污染错误弹窗
+    GENERATION.fetch_add(1, Ordering::SeqCst);
+
+    show_popup_at_cursor(app);
+    let _ = app.emit_to(
+        "popup",
+        "translate-start",
+        serde_json::json!({ "text": title, "model": model, "machine": false }),
+    );
+    let _ = app.emit_to("popup", "translate-error", msg);
+}
+
 fn read_clipboard_text() -> Option<String> {
     // 剪贴板可能被其它进程短暂占用，小退避重试
     for _ in 0..3 {
@@ -159,15 +307,19 @@ fn show_popup_at_cursor(app: &AppHandle) {
         return;
     };
 
+    // 已显示时仅更新内容，保持用户调整后的位置，也避免重复 show 造成闪烁
+    if win.is_visible().unwrap_or(false) {
+        return;
+    }
+
     if let Ok(cursor) = app.cursor_position() {
         let mut x = cursor.x + 16.0;
         let mut y = cursor.y + 20.0;
 
         // 贴近屏幕边缘时往回收，保证弹窗完整可见（多显示器按鼠标所在屏计算）
-        if let (Ok(Some(monitor)), Ok(size)) = (
-            app.monitor_from_point(cursor.x, cursor.y),
-            win.outer_size(),
-        ) {
+        if let (Ok(Some(monitor)), Ok(size)) =
+            (app.monitor_from_point(cursor.x, cursor.y), win.outer_size())
+        {
             let mpos = monitor.position();
             let msize = monitor.size();
             let (w, h) = (size.width as f64, size.height as f64);
@@ -182,4 +334,39 @@ fn show_popup_at_cursor(app: &AppHandle) {
 
     let _ = win.show();
     let _ = win.set_focus();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_supported_hotkeys() {
+        assert_eq!(
+            parse_hotkey("Ctrl + Shift + S"),
+            Some(Hotkey {
+                ctrl: true,
+                alt: false,
+                shift: true,
+                key: Key::KeyS,
+            })
+        );
+        assert_eq!(
+            parse_hotkey("alt+w"),
+            Some(Hotkey {
+                ctrl: false,
+                alt: true,
+                shift: false,
+                key: Key::KeyW,
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_ambiguous_hotkeys() {
+        assert!(parse_hotkey("W").is_none());
+        assert!(parse_hotkey("Alt+W+X").is_none());
+        assert!(parse_hotkey("Alt+Alt+W").is_none());
+        assert!(parse_hotkey("Ctrl+F1").is_none());
+    }
 }

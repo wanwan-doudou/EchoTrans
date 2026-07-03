@@ -8,6 +8,7 @@ interface AppConfig {
   temperature: number;
   enable_machine: boolean;
   theme: string;
+  snip_hotkey: string;
 }
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
@@ -19,6 +20,7 @@ const modelEl = $<HTMLInputElement>("model");
 const promptEl = $<HTMLTextAreaElement>("system_prompt");
 const temperatureEl = $<HTMLInputElement>("temperature");
 const enableMachineEl = $<HTMLInputElement>("enable_machine");
+const snipHotkeyEl = $<HTMLInputElement>("snip_hotkey");
 const toggleKeyBtn = $<HTMLButtonElement>("toggle_key");
 const saveBtn = $<HTMLButtonElement>("save");
 const testBtn = $<HTMLButtonElement>("test");
@@ -28,12 +30,12 @@ const toastEl = $("toast");
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
 function applyTheme(theme: string) {
-  document.documentElement.dataset.theme = theme || "system";
+  document.documentElement.dataset.theme = theme || "light";
 }
 
 function selectedTheme(): string {
   const checked = document.querySelector<HTMLInputElement>('input[name="theme"]:checked');
-  return checked?.value ?? "system";
+  return checked?.value ?? "light";
 }
 
 // 切换选项时即时预览（保存后才持久并同步到悬浮窗）
@@ -57,6 +59,7 @@ function collectConfig(): AppConfig {
     temperature: Number(temperatureEl.value) || 0,
     enable_machine: enableMachineEl.checked,
     theme: selectedTheme(),
+    snip_hotkey: snipHotkeyEl.value.trim(),
   };
 }
 
@@ -68,11 +71,14 @@ async function loadConfig() {
   promptEl.value = cfg.system_prompt;
   temperatureEl.value = String(cfg.temperature);
   enableMachineEl.checked = cfg.enable_machine;
+  snipHotkeyEl.value = cfg.snip_hotkey;
   const themeRadio = document.querySelector<HTMLInputElement>(
     `input[name="theme"][value="${cfg.theme}"]`,
   );
-  (themeRadio ?? document.querySelector<HTMLInputElement>('input[name="theme"][value="system"]'))!.checked = true;
-  applyTheme(cfg.theme);
+  const selected =
+    themeRadio ?? document.querySelector<HTMLInputElement>('input[name="theme"][value="light"]');
+  selected!.checked = true;
+  applyTheme(selected!.value);
 }
 
 async function saveConfig(): Promise<boolean> {

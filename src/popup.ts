@@ -9,7 +9,7 @@ interface StartPayload {
 }
 
 function applyTheme(theme: string) {
-  document.documentElement.dataset.theme = theme || "system";
+  document.documentElement.dataset.theme = theme || "light";
 }
 
 // 启动时读取一次，之后设置页保存会广播 theme-changed
@@ -94,13 +94,13 @@ void listen<string>("mt-error", (event) => {
 });
 
 void listen<string>("translate-chunk", (event) => {
-  aiText += event.payload;
+  aiText += aiText ? event.payload : event.payload.trimStart();
   aiTextEl.textContent = aiText;
   aiOutputEl.scrollTop = aiOutputEl.scrollHeight;
 });
 
 void listen<string>("translate-done", (event) => {
-  aiText = event.payload;
+  aiText = event.payload.trim();
   aiTextEl.textContent = aiText;
   aiCopyBtn.disabled = false;
   setStatus("done");

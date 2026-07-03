@@ -1,6 +1,7 @@
 mod config;
 mod hotkey;
 mod mt;
+mod snip;
 mod translator;
 mod tray;
 
@@ -8,6 +9,9 @@ use std::sync::Mutex;
 
 use config::{AppConfig, ConfigState};
 use tauri::{Emitter, Manager};
+
+/// 截屏翻译快捷键的运行时状态，保存配置时热更新
+pub struct HotkeyState(pub Mutex<Option<hotkey::Hotkey>>);
 
 #[tauri::command]
 fn get_config(state: tauri::State<'_, ConfigState>) -> AppConfig {
@@ -20,7 +24,21 @@ fn save_config(
     state: tauri::State<'_, ConfigState>,
     config: AppConfig,
 ) -> Result<(), String> {
+    // 先校验快捷键格式，避免坏配置落盘；留空表示禁用截屏翻译
+    let snip_hotkey = config.snip_hotkey.trim();
+    let parsed_hotkey = if snip_hotkey.is_empty() {
+        None
+    } else {
+        Some(
+            hotkey::parse_hotkey(snip_hotkey)
+                .ok_or("截屏快捷键格式无效，示例：Alt+W、Ctrl+Shift+S（留空禁用）")?,
+        )
+    };
+
     config::save(&app, &config)?;
+    if let Ok(mut hk) = app.state::<HotkeyState>().0.lock() {
+        *hk = parsed_hotkey;
+    }
     // 广播主题变化，悬浮窗即时切换
     let _ = app.emit("theme-changed", config.theme.clone());
     if let Ok(mut current) = state.lock() {
@@ -40,7 +58,7 @@ async fn test_translate(
     text: String,
 ) -> Result<String, String> {
     let cfg = state.lock().map_err(|_| "读取配置失败")?.clone();
-    translator::translate_stream(&cfg, &text, |_| {}).await
+    translator::translate_stream(&cfg, &text, false, |_| {}).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -54,12 +72,16 @@ pub fn run() {
             get_config,
             save_config,
             test_translate,
-            get_default_prompt
+            get_default_prompt,
+            snip::snip_capture
         ])
         .setup(|app| {
             let cfg = config::load(app.handle());
             let need_setup = cfg.api_key.trim().is_empty();
+            let parsed_hotkey = hotkey::parse_hotkey(cfg.snip_hotkey.trim());
             app.manage::<ConfigState>(Mutex::new(cfg));
+            app.manage(HotkeyState(Mutex::new(parsed_hotkey)));
+            app.manage(snip::SnipState(Mutex::new(None)));
 
             tray::create(app.handle())?;
             hotkey::start(app.handle().clone());
@@ -76,8 +98,8 @@ pub fn run() {
                 api.prevent_close();
                 let _ = window.hide();
             }
-            // 悬浮窗失焦自动收起
-            tauri::WindowEvent::Focused(false) if window.label() == "popup" => {
+            // 截屏遮罩失焦自动取消；翻译结果保持显示，避免阅读或生成过程中误收起
+            tauri::WindowEvent::Focused(false) if window.label() == "snip" => {
                 let _ = window.hide();
             }
             _ => {}

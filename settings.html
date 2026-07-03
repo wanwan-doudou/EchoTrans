@@ -42,7 +42,7 @@
 
         <label class="field check">
           <input id="enable_machine" type="checkbox" />
-          <span>同时显示微软机器翻译（免费接口，速度快，与 AI 译文对照）</span>
+          <span>剪贴板翻译同时显示微软免费机翻（截屏 OCR 仅使用 AI）</span>
         </label>
 
         <label class="field">
@@ -57,6 +57,11 @@
           <span>温度（0 ~ 2，越低越稳定；部分推理模型只接受 1）</span>
           <input id="temperature" type="number" min="0" max="2" step="0.1" />
         </label>
+
+        <label class="field">
+          <span>截屏翻译快捷键（Ctrl/Alt/Shift + 字母或数字，留空禁用；呼出后拖选屏幕区域，自动识别文字并翻译）</span>
+          <input id="snip_hotkey" type="text" placeholder="Alt+W" spellcheck="false" />
+        </label>
       </section>
 
       <section class="group">
@@ -66,7 +71,7 @@
           <div class="radio-row">
             <label><input type="radio" name="theme" value="system" /> 跟随系统</label>
             <label><input type="radio" name="theme" value="dark" /> 暗色</label>
-            <label><input type="radio" name="theme" value="light" /> 亮色</label>
+            <label><input type="radio" name="theme" value="light" checked /> 亮色</label>
           </div>
         </div>
       </section>

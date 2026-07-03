@@ -19,6 +19,8 @@ pub struct AppConfig {
     pub enable_machine: bool,
     /// 界面主题：system（跟随系统）/ dark / light
     pub theme: String,
+    /// 截屏翻译快捷键，如 "Alt+W"；留空禁用
+    pub snip_hotkey: String,
 }
 
 impl Default for AppConfig {
@@ -30,7 +32,8 @@ impl Default for AppConfig {
             system_prompt: DEFAULT_SYSTEM_PROMPT.into(),
             temperature: 0.3,
             enable_machine: true,
-            theme: "system".into(),
+            theme: "light".into(),
+            snip_hotkey: "Alt+W".into(),
         }
     }
 }

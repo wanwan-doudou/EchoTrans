@@ -12,6 +12,7 @@ export default defineConfig(async () => ({
       input: {
         popup: fileURLToPath(new URL("./index.html", import.meta.url)),
         settings: fileURLToPath(new URL("./settings.html", import.meta.url)),
+        snip: fileURLToPath(new URL("./snip.html", import.meta.url)),
       },
     },
   },

@@ -77,7 +77,23 @@ fn target_lang(text: &str) -> &'static str {
 
 pub async fn translate(text: &str) -> Result<String, String> {
     let to = target_lang(text);
-    let body = serde_json::json!([{ "Text": text }]);
+    let lines: Vec<&str> = text.split('\n').collect();
+    let content_lines = lines.iter().filter(|line| !line.trim().is_empty()).count();
+    // Translator 对单个 Text 的换行处理不稳定；按行发送后再恢复原格式
+    let preserve_lines = content_lines > 1 && content_lines <= 100;
+    let units: Vec<&str> = if preserve_lines {
+        lines
+            .iter()
+            .copied()
+            .filter(|line| !line.trim().is_empty())
+            .collect()
+    } else {
+        vec![text]
+    };
+    let body: Vec<_> = units
+        .iter()
+        .map(|unit| serde_json::json!({ "Text": unit }))
+        .collect();
 
     // 第一次失败于鉴权时强制刷新 token 再试一次
     for attempt in 0..2 {
@@ -104,10 +120,37 @@ pub async fn translate(text: &str) -> Result<String, String> {
             .json()
             .await
             .map_err(|e| format!("解析响应失败：{e}"))?;
-        return match value[0]["translations"][0]["text"].as_str() {
-            Some(t) if !t.is_empty() => Ok(t.to_string()),
-            _ => Err("接口未返回译文".into()),
-        };
+        let translated: Result<Vec<String>, String> = value
+            .as_array()
+            .ok_or("接口响应格式异常".to_string())?
+            .iter()
+            .map(|item| {
+                item["translations"][0]["text"]
+                    .as_str()
+                    .filter(|text| !text.is_empty())
+                    .map(str::to_string)
+                    .ok_or("接口未返回译文".to_string())
+            })
+            .collect();
+        let translated = translated?;
+
+        if !preserve_lines {
+            return translated.into_iter().next().ok_or("接口未返回译文".into());
+        }
+
+        let mut translated = translated.into_iter();
+        let restored = lines
+            .iter()
+            .map(|line| {
+                if line.trim().is_empty() {
+                    Ok(String::new())
+                } else {
+                    translated.next().ok_or("接口返回的段落数量不匹配")
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .join("\n");
+        return Ok(restored);
     }
     Err("翻译授权已失效，请稍后重试".into())
 }

@@ -7,6 +7,7 @@ use crate::config::AppConfig;
 pub async fn translate_stream<F>(
     cfg: &AppConfig,
     text: &str,
+    is_ocr: bool,
     mut on_delta: F,
 ) -> Result<String, String>
 where
@@ -24,10 +25,19 @@ where
         format!("{base}/chat/completions")
     };
 
+    let system_prompt = if is_ocr {
+        format!(
+            "{}\n输入文本来自屏幕 OCR。翻译前请结合上下文静默修正明显的字符误识别、断词和视觉换行；不得编造缺失内容，最终只输出译文。",
+            cfg.system_prompt
+        )
+    } else {
+        cfg.system_prompt.clone()
+    };
+
     let body = serde_json::json!({
         "model": cfg.model,
         "messages": [
-            { "role": "system", "content": cfg.system_prompt },
+            { "role": "system", "content": system_prompt },
             { "role": "user", "content": text }
         ],
         "temperature": cfg.temperature,
