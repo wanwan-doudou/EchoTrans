@@ -7,7 +7,7 @@ mod tray;
 use std::sync::Mutex;
 
 use config::{AppConfig, ConfigState};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[tauri::command]
 fn get_config(state: tauri::State<'_, ConfigState>) -> AppConfig {
@@ -21,6 +21,8 @@ fn save_config(
     config: AppConfig,
 ) -> Result<(), String> {
     config::save(&app, &config)?;
+    // 广播主题变化，悬浮窗即时切换
+    let _ = app.emit("theme-changed", config.theme.clone());
     if let Ok(mut current) = state.lock() {
         *current = config;
     }

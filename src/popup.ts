@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -6,6 +7,14 @@ interface StartPayload {
   model: string;
   machine: boolean;
 }
+
+function applyTheme(theme: string) {
+  document.documentElement.dataset.theme = theme || "system";
+}
+
+// 启动时读取一次，之后设置页保存会广播 theme-changed
+void invoke<{ theme: string }>("get_config").then((cfg) => applyTheme(cfg.theme));
+void listen<string>("theme-changed", (event) => applyTheme(event.payload));
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T;

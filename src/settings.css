@@ -16,8 +16,20 @@
   --err: #c94a3a;
 }
 
+:root[data-theme="dark"] {
+  --bg: #17181c;
+  --card: #212228;
+  --text: #e8e9ed;
+  --muted: #8b8e99;
+  --border: #33353d;
+  --accent: #5b8def;
+  --accent-hover: #6f9bf2;
+  --ok: #4caf78;
+  --err: #ef8a7a;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root[data-theme="system"] {
     --bg: #17181c;
     --card: #212228;
     --text: #e8e9ed;
@@ -118,6 +130,24 @@ body {
 .field input:focus,
 .field textarea:focus {
   border-color: var(--accent);
+}
+
+.radio-row {
+  display: flex;
+  gap: 18px;
+}
+
+.radio-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.radio-row input {
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .row-between {

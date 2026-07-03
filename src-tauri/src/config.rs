@@ -17,6 +17,8 @@ pub struct AppConfig {
     pub temperature: f32,
     /// 是否同时调用微软免费机器翻译作为快速对照
     pub enable_machine: bool,
+    /// 界面主题：system（跟随系统）/ dark / light
+    pub theme: String,
 }
 
 impl Default for AppConfig {
@@ -28,6 +30,7 @@ impl Default for AppConfig {
             system_prompt: DEFAULT_SYSTEM_PROMPT.into(),
             temperature: 0.3,
             enable_machine: true,
+            theme: "system".into(),
         }
     }
 }

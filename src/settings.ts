@@ -7,6 +7,7 @@ interface AppConfig {
   system_prompt: string;
   temperature: number;
   enable_machine: boolean;
+  theme: string;
 }
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
@@ -26,6 +27,20 @@ const toastEl = $("toast");
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
+function applyTheme(theme: string) {
+  document.documentElement.dataset.theme = theme || "system";
+}
+
+function selectedTheme(): string {
+  const checked = document.querySelector<HTMLInputElement>('input[name="theme"]:checked');
+  return checked?.value ?? "system";
+}
+
+// 切换选项时即时预览（保存后才持久并同步到悬浮窗）
+for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="theme"]')) {
+  radio.addEventListener("change", () => applyTheme(selectedTheme()));
+}
+
 function showToast(message: string) {
   toastEl.textContent = message;
   toastEl.classList.remove("hidden");
@@ -41,6 +56,7 @@ function collectConfig(): AppConfig {
     system_prompt: promptEl.value.trim(),
     temperature: Number(temperatureEl.value) || 0,
     enable_machine: enableMachineEl.checked,
+    theme: selectedTheme(),
   };
 }
 
@@ -52,6 +68,11 @@ async function loadConfig() {
   promptEl.value = cfg.system_prompt;
   temperatureEl.value = String(cfg.temperature);
   enableMachineEl.checked = cfg.enable_machine;
+  const themeRadio = document.querySelector<HTMLInputElement>(
+    `input[name="theme"][value="${cfg.theme}"]`,
+  );
+  (themeRadio ?? document.querySelector<HTMLInputElement>('input[name="theme"][value="system"]'))!.checked = true;
+  applyTheme(cfg.theme);
 }
 
 async function saveConfig(): Promise<boolean> {
