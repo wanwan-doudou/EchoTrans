@@ -5,7 +5,7 @@ use tauri::{AppHandle, Manager};
 
 pub type ConfigState = Mutex<AppConfig>;
 
-pub const DEFAULT_SYSTEM_PROMPT: &str = "你是专业翻译引擎。将用户输入的文本翻译：原文以中文为主时译为英文，否则译为简体中文。即使输入只是单个单词或短语，也必须给出译文，禁止原样返回；输入为单个单词时，输出其常用义项并标注词性（如 n. 检查；核对 v. 检查，查看）。除译文或义项外不要输出任何解释、注音或多余内容，保留原文的换行与格式。";
+pub const DEFAULT_SYSTEM_PROMPT: &str = "你是翻译引擎：中文为主的文本译为英文，其余译为简体中文。单词和短语也必须翻译，单词需给出词性与常用义项（如 check → n. 检查 v. 核对）。只输出译文，不要解释，保留原文换行与格式。";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]

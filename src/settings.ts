@@ -51,12 +51,16 @@ function showToast(message: string) {
 }
 
 function collectConfig(): AppConfig {
+  // 温度留空或非法时回退默认 0.3，避免误存为 0
+  const rawTemperature = temperatureEl.value.trim();
+  const temperature = Number(rawTemperature);
   return {
     api_base: apiBaseEl.value.trim(),
     api_key: apiKeyEl.value.trim(),
     model: modelEl.value.trim(),
     system_prompt: promptEl.value.trim(),
-    temperature: Number(temperatureEl.value) || 0,
+    temperature:
+      rawTemperature !== "" && Number.isFinite(temperature) ? temperature : 0.3,
     enable_machine: enableMachineEl.checked,
     theme: selectedTheme(),
     snip_hotkey: snipHotkeyEl.value.trim(),
@@ -79,6 +83,10 @@ async function loadConfig() {
     themeRadio ?? document.querySelector<HTMLInputElement>('input[name="theme"][value="light"]');
   selected!.checked = true;
   applyTheme(selected!.value);
+
+  // 配置就位后才允许保存，防止加载失败时把空表单覆盖进配置文件
+  saveBtn.disabled = false;
+  testBtn.disabled = false;
 }
 
 async function saveConfig(): Promise<boolean> {
@@ -131,4 +139,6 @@ testBtn.addEventListener("click", async () => {
   }
 });
 
-void loadConfig();
+void loadConfig().catch(() => {
+  showToast("配置加载失败，请关闭后重新打开设置窗口");
+});
