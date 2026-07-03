@@ -26,9 +26,9 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            api_base: "https://api.openai.com/v1".into(),
+            api_base: String::new(),
             api_key: String::new(),
-            model: "gpt-4o-mini".into(),
+            model: String::new(),
             system_prompt: DEFAULT_SYSTEM_PROMPT.into(),
             temperature: 0.3,
             enable_machine: true,

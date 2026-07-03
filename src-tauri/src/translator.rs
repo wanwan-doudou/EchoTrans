@@ -49,8 +49,8 @@ async fn stream_chat<F>(
 where
     F: FnMut(&str),
 {
-    if cfg.api_key.trim().is_empty() {
-        return Err("尚未配置 API Key，请在托盘图标 → 设置中填写".into());
+    if cfg.api_base.trim().is_empty() || cfg.api_key.trim().is_empty() || cfg.model.trim().is_empty() {
+        return Err("尚未配置接口地址、API Key 或模型，请在托盘图标 → 设置中填写".into());
     }
 
     // 容错：用户填 https://xx/v1 或直接填完整 /chat/completions 均可
