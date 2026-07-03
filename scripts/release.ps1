@@ -8,7 +8,10 @@ $keyPath = "$env:USERPROFILE\.tauri\echotrans.key"
 if (-not (Test-Path $keyPath)) {
     throw "未找到更新签名私钥：$keyPath"
 }
-$env:TAURI_SIGNING_PRIVATE_KEY_PATH = $keyPath
+# 注意：tauri CLI 读取的是私钥内容本身，_PATH 变体不一定被识别
+$env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content $keyPath -Raw).Trim()
+# 密钥无密码也需显式给空值，否则 CLI 会交互式等待密码输入
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
 
 pnpm tauri build
 if ($LASTEXITCODE -ne 0) {
