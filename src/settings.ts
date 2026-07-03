@@ -1,0 +1,107 @@
+import { invoke } from "@tauri-apps/api/core";
+
+interface AppConfig {
+  api_base: string;
+  api_key: string;
+  model: string;
+  system_prompt: string;
+  temperature: number;
+  enable_machine: boolean;
+}
+
+const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
+  document.getElementById(id) as T;
+
+const apiBaseEl = $<HTMLInputElement>("api_base");
+const apiKeyEl = $<HTMLInputElement>("api_key");
+const modelEl = $<HTMLInputElement>("model");
+const promptEl = $<HTMLTextAreaElement>("system_prompt");
+const temperatureEl = $<HTMLInputElement>("temperature");
+const enableMachineEl = $<HTMLInputElement>("enable_machine");
+const toggleKeyBtn = $<HTMLButtonElement>("toggle_key");
+const saveBtn = $<HTMLButtonElement>("save");
+const testBtn = $<HTMLButtonElement>("test");
+const testResultEl = $("test_result");
+const toastEl = $("toast");
+
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+
+function showToast(message: string) {
+  toastEl.textContent = message;
+  toastEl.classList.remove("hidden");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 1800);
+}
+
+function collectConfig(): AppConfig {
+  return {
+    api_base: apiBaseEl.value.trim(),
+    api_key: apiKeyEl.value.trim(),
+    model: modelEl.value.trim(),
+    system_prompt: promptEl.value.trim(),
+    temperature: Number(temperatureEl.value) || 0,
+    enable_machine: enableMachineEl.checked,
+  };
+}
+
+async function loadConfig() {
+  const cfg = await invoke<AppConfig>("get_config");
+  apiBaseEl.value = cfg.api_base;
+  apiKeyEl.value = cfg.api_key;
+  modelEl.value = cfg.model;
+  promptEl.value = cfg.system_prompt;
+  temperatureEl.value = String(cfg.temperature);
+  enableMachineEl.checked = cfg.enable_machine;
+}
+
+async function saveConfig(): Promise<boolean> {
+  try {
+    await invoke("save_config", { config: collectConfig() });
+    return true;
+  } catch (error) {
+    showToast(`保存失败：${error}`);
+    return false;
+  }
+}
+
+$<HTMLButtonElement>("reset_prompt").addEventListener("click", async () => {
+  promptEl.value = await invoke<string>("get_default_prompt");
+  showToast("已填入默认提示词，记得保存");
+});
+
+toggleKeyBtn.addEventListener("click", () => {
+  const hidden = apiKeyEl.type === "password";
+  apiKeyEl.type = hidden ? "text" : "password";
+  toggleKeyBtn.textContent = hidden ? "隐藏" : "显示";
+});
+
+saveBtn.addEventListener("click", async () => {
+  if (await saveConfig()) {
+    showToast("已保存 ✓");
+  }
+});
+
+testBtn.addEventListener("click", async () => {
+  if (!(await saveConfig())) return;
+
+  testBtn.disabled = true;
+  testBtn.textContent = "测试中…";
+  testResultEl.classList.remove("hidden", "ok", "err");
+  testResultEl.textContent = "正在请求接口，请稍候…";
+
+  try {
+    const result = await invoke<string>("test_translate", {
+      text: "Hello! This is a connectivity test.",
+    });
+    testResultEl.classList.add("ok");
+    testResultEl.textContent = `连接成功，译文：${result}`;
+  } catch (error) {
+    testResultEl.classList.add("err");
+    testResultEl.textContent = `测试失败：${error}`;
+  } finally {
+    testBtn.disabled = false;
+    testBtn.textContent = "保存并测试";
+  }
+});
+
+void loadConfig();

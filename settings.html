@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EchoTrans 设置</title>
+    <link rel="stylesheet" href="/src/settings.css" />
+    <script type="module" src="/src/settings.ts" defer></script>
+  </head>
+  <body>
+    <main class="page">
+      <header class="head">
+        <h1>EchoTrans</h1>
+        <p class="tip">在任意应用中选中文本，<b>连按三次 Ctrl+C</b>，译文会在鼠标旁弹出。</p>
+      </header>
+
+      <section class="group">
+        <h2>接口设置</h2>
+        <p class="desc">兼容 OpenAI Chat Completions 的服务均可使用：OpenAI、DeepSeek、Kimi、通义千问、智谱、Ollama 等。</p>
+
+        <label class="field">
+          <span>接口地址（Base URL）</span>
+          <input id="api_base" type="text" placeholder="https://api.openai.com/v1" spellcheck="false" />
+        </label>
+
+        <label class="field">
+          <span>API Key</span>
+          <div class="row">
+            <input id="api_key" type="password" placeholder="sk-..." spellcheck="false" />
+            <button id="toggle_key" class="btn ghost" type="button">显示</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>模型</span>
+          <input id="model" type="text" placeholder="gpt-4o-mini / deepseek-chat / qwen-turbo ..." spellcheck="false" />
+        </label>
+      </section>
+
+      <section class="group">
+        <h2>翻译设置</h2>
+
+        <label class="field check">
+          <input id="enable_machine" type="checkbox" />
+          <span>同时显示微软机器翻译（免费接口，速度快，与 AI 译文对照）</span>
+        </label>
+
+        <label class="field">
+          <span class="row-between">
+            <span>系统提示词（决定翻译方向与风格）</span>
+            <button id="reset_prompt" class="link-btn" type="button">恢复默认</button>
+          </span>
+          <textarea id="system_prompt" rows="5" spellcheck="false"></textarea>
+        </label>
+
+        <label class="field slim">
+          <span>温度（0 ~ 2，越低越稳定；部分推理模型只接受 1）</span>
+          <input id="temperature" type="number" min="0" max="2" step="0.1" />
+        </label>
+      </section>
+
+      <div class="actions">
+        <button id="save" class="btn primary" type="button">保存</button>
+        <button id="test" class="btn" type="button">保存并测试</button>
+      </div>
+
+      <div id="test_result" class="test-result hidden"></div>
+    </main>
+
+    <div id="toast" class="toast hidden"></div>
+  </body>
+</html>

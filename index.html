@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EchoTrans</title>
+    <link rel="stylesheet" href="/src/popup.css" />
+    <script type="module" src="/src/popup.ts" defer></script>
+  </head>
+  <body>
+    <div class="card">
+      <header class="bar" data-tauri-drag-region>
+        <span id="status" class="dot"></span>
+        <span id="source" class="source" data-tauri-drag-region></span>
+        <button id="close" class="icon-btn" title="关闭 (Esc)">&#10005;</button>
+      </header>
+
+      <section id="mt_section" class="section mt">
+        <div class="section-head">
+          <span class="tag">微软翻译</span>
+          <button id="mt_copy" class="mini-btn" disabled>复制</button>
+        </div>
+        <div id="mt_output" class="section-body"></div>
+      </section>
+
+      <section class="section ai">
+        <div class="section-head">
+          <span class="tag accent" id="ai_tag">AI</span>
+          <button id="ai_copy" class="mini-btn" disabled>复制</button>
+        </div>
+        <div id="ai_output" class="section-body">
+          <span id="ai_text"></span><span id="caret" class="caret hidden">&#9613;</span>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>
