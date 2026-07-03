@@ -270,6 +270,44 @@ body {
   color: var(--err);
 }
 
+.about-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.about-version {
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.update-status {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.update-status.ok {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.update-status.err {
+  border-color: var(--err);
+  color: var(--err);
+}
+
+.slim-btn {
+  margin-top: 12px;
+}
+
 .toast {
   position: fixed;
   left: 50%;

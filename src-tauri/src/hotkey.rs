@@ -309,7 +309,7 @@ pub fn translate_image_and_show(app: &AppHandle, png_base64: String) {
                 // 4xx 大概率是模型不支持图片输入，附上排查提示
                 if msg.starts_with("接口返回 4") {
                     msg.push_str(
-                        "\n\n若提示不支持图片输入，请在设置中更换支持视觉的模型（如 gpt-4o-mini、qwen-vl-plus、glm-4v-flash）",
+                        "\n\n若提示不支持图片输入，请在设置中更换支持视觉的模型（如 gpt-5.5、qwen-vl-max、glm-4.5v）",
                     );
                 }
                 let _ = app.emit_to("popup", "translate-error", msg);

@@ -33,7 +33,7 @@
 
         <label class="field">
           <span>模型</span>
-          <input id="model" type="text" placeholder="gpt-4o-mini / deepseek-chat / qwen-turbo ..." spellcheck="false" />
+          <input id="model" type="text" placeholder="gpt-5.5 / deepseek-chat / qwen-plus / glm-5 ..." spellcheck="false" />
         </label>
       </section>
 
@@ -74,6 +74,16 @@
             <label><input type="radio" name="theme" value="light" checked /> 亮色</label>
           </div>
         </div>
+      </section>
+
+      <section class="group">
+        <h2>关于</h2>
+        <div class="about-row">
+          <span class="about-version">EchoTrans v<span id="app_version">-</span></span>
+          <button id="check_update" class="btn ghost" type="button">检查更新</button>
+        </div>
+        <div id="update_status" class="update-status hidden"></div>
+        <button id="install_update" class="btn primary slim-btn hidden" type="button">下载并安装更新</button>
       </section>
 
       <div class="actions">

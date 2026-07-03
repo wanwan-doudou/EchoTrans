@@ -1,6 +1,6 @@
 [package]
 name = "echotrans"
-version = "0.3.0"
+version = "0.4.0"
 description = "连按三次 Ctrl+C 即时 AI 翻译"
 authors = ["doudou"]
 edition = "2021"
@@ -24,3 +24,5 @@ futures-util = "0.3"
 xcap = "0.9.6"
 image = "0.25.10"
 base64 = "0.22.1"
+tauri-plugin-updater = "2.10.1"
+tauri-plugin-process = "2.3.1"

@@ -1,4 +1,7 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 
 interface AppConfig {
   api_base: string;
@@ -136,6 +139,76 @@ testBtn.addEventListener("click", async () => {
   } finally {
     testBtn.disabled = false;
     testBtn.textContent = "保存并测试";
+  }
+});
+
+// ---- 检查更新 ----
+
+const versionEl = $("app_version");
+const checkUpdateBtn = $<HTMLButtonElement>("check_update");
+const updateStatusEl = $("update_status");
+const installUpdateBtn = $<HTMLButtonElement>("install_update");
+
+let pendingUpdate: Update | null = null;
+
+void getVersion().then((version) => {
+  versionEl.textContent = version;
+});
+
+checkUpdateBtn.addEventListener("click", async () => {
+  checkUpdateBtn.disabled = true;
+  checkUpdateBtn.textContent = "检查中…";
+  updateStatusEl.classList.remove("hidden", "ok", "err");
+  updateStatusEl.textContent = "正在检查更新…";
+  installUpdateBtn.classList.add("hidden");
+  pendingUpdate = null;
+
+  try {
+    pendingUpdate = await check();
+    if (pendingUpdate) {
+      updateStatusEl.classList.add("ok");
+      const notes = pendingUpdate.body ? `\n${pendingUpdate.body}` : "";
+      updateStatusEl.textContent = `发现新版本 v${pendingUpdate.version}${notes}`;
+      installUpdateBtn.classList.remove("hidden");
+      installUpdateBtn.disabled = false;
+    } else {
+      updateStatusEl.classList.add("ok");
+      updateStatusEl.textContent = `已是最新版本 v${await getVersion()}`;
+    }
+  } catch (error) {
+    updateStatusEl.classList.add("err");
+    updateStatusEl.textContent = `检查更新失败：${error}`;
+  } finally {
+    checkUpdateBtn.disabled = false;
+    checkUpdateBtn.textContent = "检查更新";
+  }
+});
+
+installUpdateBtn.addEventListener("click", async () => {
+  if (!pendingUpdate) return;
+  installUpdateBtn.disabled = true;
+
+  let downloaded = 0;
+  let total = 0;
+  try {
+    await pendingUpdate.downloadAndInstall((event) => {
+      if (event.event === "Started") {
+        total = event.data.contentLength ?? 0;
+        updateStatusEl.textContent = "开始下载更新…";
+      } else if (event.event === "Progress") {
+        downloaded += event.data.chunkLength;
+        const percent = total ? Math.round((downloaded / total) * 100) : 0;
+        updateStatusEl.textContent = `下载中… ${percent}%`;
+      } else if (event.event === "Finished") {
+        updateStatusEl.textContent = "下载完成，正在安装…";
+      }
+    });
+    updateStatusEl.textContent = "安装完成，即将重启应用…";
+    await relaunch();
+  } catch (error) {
+    updateStatusEl.classList.add("err");
+    updateStatusEl.textContent = `更新失败：${error}`;
+    installUpdateBtn.disabled = false;
   }
 });
 

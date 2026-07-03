@@ -68,6 +68,8 @@ pub fn run() {
             // 重复启动时唤起已有实例的设置窗口
             tray::show_settings(app);
         }))
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             get_config,
             save_config,
