@@ -58,7 +58,7 @@ async fn test_translate(
     text: String,
 ) -> Result<String, String> {
     let cfg = state.lock().map_err(|_| "读取配置失败")?.clone();
-    translator::translate_stream(&cfg, &text, false, |_| {}).await
+    translator::translate_stream(&cfg, &text, |_| {}).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -195,11 +195,11 @@ fn handle_clipboard_trigger(app: &AppHandle) {
     if text.is_empty() {
         return;
     }
-    translate_and_show(app, text, false);
+    translate_and_show(app, text);
 }
 
-/// 公共翻译管线：弹出悬浮窗，机翻与 AI 双通道并行。剪贴板与截屏 OCR 共用。
-pub fn translate_and_show(app: &AppHandle, text: String, is_ocr: bool) {
+/// 剪贴板翻译管线：弹出悬浮窗，机翻与 AI 双通道并行
+pub fn translate_and_show(app: &AppHandle, text: String) {
     let text: String = text.chars().take(MAX_CHARS).collect();
     if text.trim().is_empty() {
         return;
@@ -215,7 +215,7 @@ pub fn translate_and_show(app: &AppHandle, text: String, is_ocr: bool) {
     };
 
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
-    let use_machine = cfg.enable_machine && !is_ocr;
+    let use_machine = cfg.enable_machine;
 
     show_popup_at_cursor(app);
     let _ = app.emit_to(
@@ -224,7 +224,6 @@ pub fn translate_and_show(app: &AppHandle, text: String, is_ocr: bool) {
         serde_json::json!({ "text": text, "model": cfg.model, "machine": use_machine }),
     );
 
-    // OCR 文本可能残留错字，传统机翻会放大错误；仅对剪贴板原文提供快速对照
     if use_machine {
         let app_mt = app.clone();
         let text_mt = text.clone();
@@ -247,7 +246,7 @@ pub fn translate_and_show(app: &AppHandle, text: String, is_ocr: bool) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let emitter = app.clone();
-        let result = translator::translate_stream(&cfg, &text, is_ocr, move |delta| {
+        let result = translator::translate_stream(&cfg, &text, move |delta| {
             if GENERATION.load(Ordering::SeqCst) == generation {
                 let _ = emitter.emit_to("popup", "translate-chunk", delta);
             }
@@ -269,7 +268,57 @@ pub fn translate_and_show(app: &AppHandle, text: String, is_ocr: bool) {
     });
 }
 
-/// 截屏 OCR 失败等场景：复用悬浮窗展示错误
+/// 截屏翻译管线：截图直接交给视觉模型识别并翻译（图片输入不适用机翻通道）
+pub fn translate_image_and_show(app: &AppHandle, png_base64: String) {
+    let cfg = {
+        let state = app.state::<ConfigState>();
+        let guard = match state.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        guard.clone()
+    };
+
+    let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+
+    show_popup_at_cursor(app);
+    let _ = app.emit_to(
+        "popup",
+        "translate-start",
+        serde_json::json!({ "text": "屏幕截图 · 视觉识别翻译", "model": cfg.model, "machine": false }),
+    );
+
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let emitter = app.clone();
+        let result = translator::translate_image_stream(&cfg, &png_base64, move |delta| {
+            if GENERATION.load(Ordering::SeqCst) == generation {
+                let _ = emitter.emit_to("popup", "translate-chunk", delta);
+            }
+        })
+        .await;
+
+        if GENERATION.load(Ordering::SeqCst) != generation {
+            return;
+        }
+        match result {
+            Ok(full) => {
+                let _ = app.emit_to("popup", "translate-done", full);
+            }
+            Err(mut msg) => {
+                // 4xx 大概率是模型不支持图片输入，附上排查提示
+                if msg.starts_with("接口返回 4") {
+                    msg.push_str(
+                        "\n\n若提示不支持图片输入，请在设置中更换支持视觉的模型（如 gpt-4o-mini、qwen-vl-plus、glm-4v-flash）",
+                    );
+                }
+                let _ = app.emit_to("popup", "translate-error", msg);
+            }
+        }
+    });
+}
+
+/// 截屏失败等场景：复用悬浮窗展示错误
 pub fn show_error_popup(app: &AppHandle, title: &str, msg: String) {
     let model = app
         .state::<ConfigState>()

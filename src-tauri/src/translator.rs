@@ -2,12 +2,48 @@ use futures_util::StreamExt;
 
 use crate::config::AppConfig;
 
-/// 调用 OpenAI 兼容的 /chat/completions 流式接口，每收到一段增量文本回调一次 on_delta，
-/// 结束后返回完整译文。
-pub async fn translate_stream<F>(
+/// 文本翻译：调用 OpenAI 兼容的 /chat/completions 流式接口，
+/// 每收到一段增量文本回调一次 on_delta，结束后返回完整译文。
+pub async fn translate_stream<F>(cfg: &AppConfig, text: &str, on_delta: F) -> Result<String, String>
+where
+    F: FnMut(&str),
+{
+    let messages = serde_json::json!([
+        { "role": "system", "content": cfg.system_prompt },
+        { "role": "user", "content": text }
+    ]);
+    stream_chat(cfg, messages, on_delta).await
+}
+
+/// 截屏翻译：截图直接交给视觉模型，识别与翻译一步完成（需模型支持图片输入）
+pub async fn translate_image_stream<F>(
     cfg: &AppConfig,
-    text: &str,
-    is_ocr: bool,
+    png_base64: &str,
+    on_delta: F,
+) -> Result<String, String>
+where
+    F: FnMut(&str),
+{
+    let system_prompt = format!(
+        "{}\n用户消息是一张屏幕截图：先识别图中文字，再按上述规则翻译；忽略按钮、菜单等界面装饰元素，只输出正文的译文。",
+        cfg.system_prompt
+    );
+    let messages = serde_json::json!([
+        { "role": "system", "content": system_prompt },
+        {
+            "role": "user",
+            "content": [{
+                "type": "image_url",
+                "image_url": { "url": format!("data:image/png;base64,{png_base64}") }
+            }]
+        }
+    ]);
+    stream_chat(cfg, messages, on_delta).await
+}
+
+async fn stream_chat<F>(
+    cfg: &AppConfig,
+    messages: serde_json::Value,
     mut on_delta: F,
 ) -> Result<String, String>
 where
@@ -25,21 +61,9 @@ where
         format!("{base}/chat/completions")
     };
 
-    let system_prompt = if is_ocr {
-        format!(
-            "{}\n输入文本来自屏幕 OCR。翻译前请结合上下文静默修正明显的字符误识别、断词和视觉换行；不得编造缺失内容，最终只输出译文。",
-            cfg.system_prompt
-        )
-    } else {
-        cfg.system_prompt.clone()
-    };
-
     let body = serde_json::json!({
         "model": cfg.model,
-        "messages": [
-            { "role": "system", "content": system_prompt },
-            { "role": "user", "content": text }
-        ],
+        "messages": messages,
         "temperature": cfg.temperature,
         "stream": true
     });
