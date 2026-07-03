@@ -143,9 +143,12 @@ body {
   gap: 6px;
   font-size: 13px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
-.radio-row input {
+/* 提高特异性覆盖 .field input 的 width: 100%，radio 保持自然宽度 */
+.field .radio-row input {
+  width: auto;
   accent-color: var(--accent);
   cursor: pointer;
 }
