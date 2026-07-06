@@ -10,10 +10,10 @@ if (-not (Test-Path $keyPath)) {
 }
 # 注意：tauri CLI 读取的是私钥内容本身，_PATH 变体不一定被识别
 $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content $keyPath -Raw).Trim()
-# 密钥无密码也需显式给空值，否则 CLI 会交互式等待密码输入
+# 空密码需配合 --ci，避免 CLI 进入交互式等待
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
 
-pnpm tauri build
+pnpm tauri build --ci
 if ($LASTEXITCODE -ne 0) {
     throw "构建失败"
 }
