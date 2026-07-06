@@ -13,7 +13,7 @@ $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content $keyPath -Raw).Trim()
 # 空密码需配合 --ci，避免 CLI 进入交互式等待
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
 
-pnpm tauri build --ci
+pnpm.cmd tauri build --ci
 if ($LASTEXITCODE -ne 0) {
     throw "构建失败"
 }

@@ -1,5 +1,6 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 
@@ -148,36 +149,211 @@ const versionEl = $("app_version");
 const checkUpdateBtn = $<HTMLButtonElement>("check_update");
 const updateStatusEl = $("update_status");
 const installUpdateBtn = $<HTMLButtonElement>("install_update");
+const manualDownloadBtn = $<HTMLButtonElement>("manual_download");
 
 let pendingUpdate: Update | null = null;
+let manualDownloadUrl = "";
+
+const RELEASES_URL = "https://github.com/wanwan-doudou/EchoTrans/releases";
+const CHECK_RETRY_DELAYS_MS = [800, 2_000, 5_000];
+const DOWNLOAD_RETRY_DELAYS_MS = [1_000, 2_500, 5_000];
+const CHECK_TIMEOUT_MS = 20_000;
+const DOWNLOAD_TIMEOUT_MS = 180_000;
 
 void getVersion().then((version) => {
   versionEl.textContent = version;
 });
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatUpdateError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.replace(/\s+/g, " ").trim();
+  return normalized.length > 280 ? `${normalized.slice(0, 280)}…` : normalized;
+}
+
+function isRetriableUpdateError(error: unknown): boolean {
+  const message = formatUpdateError(error).toLowerCase();
+  const nonRetriableTokens = [
+    "signature",
+    "checksum",
+    "hash",
+    "digest",
+    "verify",
+    "invalid json",
+    "decoding response body",
+  ];
+  if (nonRetriableTokens.some((token) => message.includes(token))) {
+    return false;
+  }
+
+  const retriableTokens = [
+    "error sending request",
+    "failed to fetch",
+    "timeout",
+    "timed out",
+    "dns",
+    "tls",
+    "ssl",
+    "proxy",
+    "connection",
+    "network",
+  ];
+  return retriableTokens.some((token) => message.includes(token));
+}
+
+async function retryWithBackoff<T>(
+  action: (attempt: number) => Promise<T>,
+  delays: readonly number[],
+  onRetry: (attempt: number, delayMs: number, error: unknown) => void,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= delays.length + 1; attempt += 1) {
+    try {
+      return await action(attempt);
+    } catch (error) {
+      lastError = error;
+      const delayMs = delays[attempt - 1];
+      if (!delayMs || !isRetriableUpdateError(error)) {
+        throw error;
+      }
+      onRetry(attempt, delayMs, error);
+      await sleep(delayMs);
+    }
+  }
+  throw lastError;
+}
+
+function setUpdateStatus(kind: "info" | "ok" | "err", message: string) {
+  updateStatusEl.classList.remove("hidden", "ok", "err");
+  if (kind !== "info") {
+    updateStatusEl.classList.add(kind);
+  }
+  updateStatusEl.textContent = message;
+}
+
+function extractUrl(value: unknown): string | null {
+  if (typeof value === "string" && value.startsWith("http")) {
+    return value;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  for (const key of ["url", "download_url", "html_url", "details_url"]) {
+    const url = extractUrl(record[key]);
+    if (url) return url;
+  }
+  return null;
+}
+
+function resolveManualDownloadUrl(update: Update): string {
+  const platforms = update.rawJson.platforms;
+  if (platforms && typeof platforms === "object" && !Array.isArray(platforms)) {
+    const platformMap = platforms as Record<string, unknown>;
+    const currentPlatformUrl = extractUrl(platformMap["windows-x86_64"]);
+    if (currentPlatformUrl) return currentPlatformUrl;
+
+    for (const platform of Object.values(platformMap)) {
+      const platformUrl = extractUrl(platform);
+      if (platformUrl) return platformUrl;
+    }
+  }
+
+  const directUrl = extractUrl(update.rawJson);
+  return directUrl ?? `${RELEASES_URL}/tag/v${update.version}`;
+}
+
+async function checkForUpdateWithRetry(): Promise<Update | null> {
+  return retryWithBackoff(
+    () => check({ timeout: CHECK_TIMEOUT_MS }),
+    CHECK_RETRY_DELAYS_MS,
+    (attempt, delayMs, error) => {
+      setUpdateStatus(
+        "info",
+        `检查更新失败，${Math.round(delayMs / 1_000)} 秒后重试（${attempt}/${CHECK_RETRY_DELAYS_MS.length}）：${formatUpdateError(error)}`,
+      );
+    },
+  );
+}
+
+async function downloadAndInstallWithRetry(): Promise<void> {
+  await retryWithBackoff(
+    async (attempt) => {
+      const candidate = await check({ timeout: CHECK_TIMEOUT_MS });
+      if (!candidate) {
+        throw new Error("重新检查时未发现可安装的新版本");
+      }
+
+      pendingUpdate = candidate;
+      manualDownloadUrl = resolveManualDownloadUrl(candidate);
+      let downloaded = 0;
+      let total = 0;
+      const prefix =
+        attempt > 1
+          ? `第 ${attempt}/${DOWNLOAD_RETRY_DELAYS_MS.length + 1} 次下载：`
+          : "";
+
+      try {
+        await candidate.downloadAndInstall(
+          (event) => {
+            if (event.event === "Started") {
+              downloaded = 0;
+              total = event.data.contentLength ?? 0;
+              setUpdateStatus("info", `${prefix}开始下载更新…`);
+            } else if (event.event === "Progress") {
+              downloaded += event.data.chunkLength;
+              const percent = total ? Math.round((downloaded / total) * 100) : 0;
+              setUpdateStatus("info", `${prefix}下载中… ${percent}%`);
+            } else if (event.event === "Finished") {
+              setUpdateStatus("info", `${prefix}下载完成，正在安装…`);
+            }
+          },
+          { timeout: DOWNLOAD_TIMEOUT_MS },
+        );
+      } catch (error) {
+        await candidate.close().catch(() => undefined);
+        throw error;
+      }
+    },
+    DOWNLOAD_RETRY_DELAYS_MS,
+    (attempt, delayMs, error) => {
+      setUpdateStatus(
+        "info",
+        `下载更新失败，${Math.round(delayMs / 1_000)} 秒后重试（${attempt}/${DOWNLOAD_RETRY_DELAYS_MS.length}）：${formatUpdateError(error)}`,
+      );
+    },
+  );
+}
+
 checkUpdateBtn.addEventListener("click", async () => {
   checkUpdateBtn.disabled = true;
   checkUpdateBtn.textContent = "检查中…";
-  updateStatusEl.classList.remove("hidden", "ok", "err");
-  updateStatusEl.textContent = "正在检查更新…";
+  setUpdateStatus("info", "正在检查更新…");
   installUpdateBtn.classList.add("hidden");
+  manualDownloadBtn.classList.add("hidden");
   pendingUpdate = null;
+  manualDownloadUrl = "";
 
   try {
-    pendingUpdate = await check();
+    pendingUpdate = await checkForUpdateWithRetry();
     if (pendingUpdate) {
-      updateStatusEl.classList.add("ok");
+      manualDownloadUrl = resolveManualDownloadUrl(pendingUpdate);
       const notes = pendingUpdate.body ? `\n${pendingUpdate.body}` : "";
-      updateStatusEl.textContent = `发现新版本 v${pendingUpdate.version}${notes}`;
+      setUpdateStatus("ok", `发现新版本 v${pendingUpdate.version}${notes}`);
       installUpdateBtn.classList.remove("hidden");
       installUpdateBtn.disabled = false;
+      manualDownloadBtn.classList.remove("hidden");
+      manualDownloadBtn.disabled = false;
     } else {
-      updateStatusEl.classList.add("ok");
-      updateStatusEl.textContent = `已是最新版本 v${await getVersion()}`;
+      setUpdateStatus("ok", `已是最新版本 v${await getVersion()}`);
     }
   } catch (error) {
-    updateStatusEl.classList.add("err");
-    updateStatusEl.textContent = `检查更新失败：${error}`;
+    console.error("检查更新失败", error);
+    setUpdateStatus("err", `检查更新失败：${formatUpdateError(error)}`);
   } finally {
     checkUpdateBtn.disabled = false;
     checkUpdateBtn.textContent = "检查更新";
@@ -187,28 +363,37 @@ checkUpdateBtn.addEventListener("click", async () => {
 installUpdateBtn.addEventListener("click", async () => {
   if (!pendingUpdate) return;
   installUpdateBtn.disabled = true;
+  manualDownloadBtn.disabled = true;
 
-  let downloaded = 0;
-  let total = 0;
   try {
-    await pendingUpdate.downloadAndInstall((event) => {
-      if (event.event === "Started") {
-        total = event.data.contentLength ?? 0;
-        updateStatusEl.textContent = "开始下载更新…";
-      } else if (event.event === "Progress") {
-        downloaded += event.data.chunkLength;
-        const percent = total ? Math.round((downloaded / total) * 100) : 0;
-        updateStatusEl.textContent = `下载中… ${percent}%`;
-      } else if (event.event === "Finished") {
-        updateStatusEl.textContent = "下载完成，正在安装…";
-      }
-    });
-    updateStatusEl.textContent = "安装完成，即将重启应用…";
+    await downloadAndInstallWithRetry();
+    setUpdateStatus("ok", "安装完成，即将重启应用…");
     await relaunch();
   } catch (error) {
-    updateStatusEl.classList.add("err");
-    updateStatusEl.textContent = `更新失败：${error}`;
+    console.error("更新失败", error);
+    const fallbackTip = manualDownloadUrl
+      ? "\n可重试，或点击“浏览器下载更新”手动安装。"
+      : "";
+    setUpdateStatus("err", `更新失败：${formatUpdateError(error)}${fallbackTip}`);
     installUpdateBtn.disabled = false;
+    manualDownloadBtn.disabled = false;
+  }
+});
+
+manualDownloadBtn.addEventListener("click", async () => {
+  const url = manualDownloadUrl || RELEASES_URL;
+  manualDownloadBtn.disabled = true;
+
+  try {
+    await openUrl(url);
+  } catch (error) {
+    console.error("打开下载链接失败", error);
+    setUpdateStatus(
+      "err",
+      `打开浏览器失败：${formatUpdateError(error)}\n下载地址：${url}`,
+    );
+  } finally {
+    manualDownloadBtn.disabled = false;
   }
 });
 
