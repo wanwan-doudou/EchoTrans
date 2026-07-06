@@ -41,7 +41,12 @@ $latest = [ordered]@{
 }
 
 $latestPath = "$bundleDir/latest.json"
-$latest | ConvertTo-Json -Depth 4 | Set-Content $latestPath -Encoding UTF8
+$latestJson = $latest | ConvertTo-Json -Depth 4
+[IO.File]::WriteAllText(
+    [IO.Path]::GetFullPath($latestPath),
+    $latestJson,
+    [Text.UTF8Encoding]::new($false)
+)
 
 Write-Host ""
 Write-Host "构建完成 v$version，需上传到 GitHub Release（tag v$version）的文件："
