@@ -54,6 +54,10 @@ function showToast(message: string) {
   toastTimer = setTimeout(() => toastEl.classList.add("hidden"), 1800);
 }
 
+function formatConfigError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function collectConfig(): AppConfig {
   // 温度留空或非法时回退默认 0.3，避免误存为 0
   const rawTemperature = temperatureEl.value.trim();
@@ -69,6 +73,14 @@ function collectConfig(): AppConfig {
     theme: selectedTheme(),
     snip_hotkey: snipHotkeyEl.value.trim(),
   };
+}
+
+function validateConfigInput(): string | null {
+  if (!apiBaseEl.value.trim()) return "接口地址不能为空，已取消保存";
+  if (!apiKeyEl.value.trim()) return "API Key 不能为空，已取消保存";
+  if (!modelEl.value.trim()) return "模型不能为空，已取消保存";
+  if (!promptEl.value.trim()) return "系统提示词不能为空，已取消保存";
+  return null;
 }
 
 async function loadConfig() {
@@ -94,11 +106,17 @@ async function loadConfig() {
 }
 
 async function saveConfig(): Promise<boolean> {
+  const validationError = validateConfigInput();
+  if (validationError) {
+    showToast(validationError);
+    return false;
+  }
+
   try {
     await invoke("save_config", { config: collectConfig() });
     return true;
   } catch (error) {
-    showToast(`保存失败：${error}`);
+    showToast(`保存失败：${formatConfigError(error)}`);
     return false;
   }
 }
@@ -397,6 +415,11 @@ manualDownloadBtn.addEventListener("click", async () => {
   }
 });
 
-void loadConfig().catch(() => {
-  showToast("配置加载失败，请关闭后重新打开设置窗口");
+void loadConfig().catch((error) => {
+  saveBtn.disabled = true;
+  testBtn.disabled = true;
+  testResultEl.classList.remove("hidden", "ok");
+  testResultEl.classList.add("err");
+  testResultEl.textContent = `配置加载失败：${formatConfigError(error)}\n为避免覆盖原配置，已禁用保存。请先重启应用；如果仍失败，检查配置文件或备份文件。`;
+  showToast("配置加载失败，已禁用保存");
 });

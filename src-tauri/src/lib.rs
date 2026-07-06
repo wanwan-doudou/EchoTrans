@@ -12,18 +12,37 @@ use tauri::{Emitter, Manager};
 
 /// 截屏翻译快捷键的运行时状态，保存配置时热更新
 pub struct HotkeyState(pub Mutex<Option<hotkey::Hotkey>>);
+pub struct ConfigLoadErrorState(pub Mutex<Option<String>>);
 
 #[tauri::command]
-fn get_config(state: tauri::State<'_, ConfigState>) -> AppConfig {
-    state.lock().map(|c| c.clone()).unwrap_or_default()
+fn get_config(
+    state: tauri::State<'_, ConfigState>,
+    load_error: tauri::State<'_, ConfigLoadErrorState>,
+) -> Result<AppConfig, String> {
+    if let Some(error) = load_error
+        .0
+        .lock()
+        .map_err(|_| "读取配置加载状态失败".to_string())?
+        .clone()
+    {
+        return Err(error);
+    }
+
+    state
+        .lock()
+        .map(|c| c.clone())
+        .map_err(|_| "读取配置失败".into())
 }
 
 #[tauri::command]
 fn save_config(
     app: tauri::AppHandle,
     state: tauri::State<'_, ConfigState>,
+    load_error: tauri::State<'_, ConfigLoadErrorState>,
     config: AppConfig,
 ) -> Result<(), String> {
+    config.validate_for_save()?;
+
     // 先校验快捷键格式，避免坏配置落盘；留空表示禁用截屏翻译
     let snip_hotkey = config.snip_hotkey.trim();
     let parsed_hotkey = if snip_hotkey.is_empty() {
@@ -43,6 +62,9 @@ fn save_config(
     let _ = app.emit("theme-changed", config.theme.clone());
     if let Ok(mut current) = state.lock() {
         *current = config;
+    }
+    if let Ok(mut error) = load_error.0.lock() {
+        *error = None;
     }
     Ok(())
 }
@@ -79,10 +101,17 @@ pub fn run() {
             snip::snip_capture
         ])
         .setup(|app| {
-            let cfg = config::load(app.handle());
+            let (cfg, config_load_error) = match config::load(app.handle()) {
+                Ok(cfg) => (cfg, None),
+                Err(error) => {
+                    eprintln!("配置加载失败：{error}");
+                    (AppConfig::default(), Some(error))
+                }
+            };
             let need_setup = cfg.api_key.trim().is_empty();
             let parsed_hotkey = hotkey::parse_hotkey(cfg.snip_hotkey.trim());
             app.manage::<ConfigState>(Mutex::new(cfg));
+            app.manage(ConfigLoadErrorState(Mutex::new(config_load_error)));
             app.manage(HotkeyState(Mutex::new(parsed_hotkey)));
             app.manage(snip::SnipState(Mutex::new(None)));
 

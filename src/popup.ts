@@ -13,7 +13,9 @@ function applyTheme(theme: string) {
 }
 
 // 启动时读取一次，之后设置页保存会广播 theme-changed
-void invoke<{ theme: string }>("get_config").then((cfg) => applyTheme(cfg.theme));
+void invoke<{ theme: string }>("get_config")
+  .then((cfg) => applyTheme(cfg.theme))
+  .catch(() => undefined);
 void listen<string>("theme-changed", (event) => applyTheme(event.payload));
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
