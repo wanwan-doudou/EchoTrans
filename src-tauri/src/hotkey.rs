@@ -9,7 +9,7 @@ use std::{
 use rdev::{Event, EventType, Key};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition};
 
-use crate::{config::ConfigState, mt, snip, translator, HotkeyState};
+use crate::{HotkeyState, config::ConfigState, mt, snip, translator};
 
 /// 翻译请求代际号：连续触发时，让旧的流式任务停止向弹窗推送
 static GENERATION: AtomicU64 = AtomicU64::new(0);

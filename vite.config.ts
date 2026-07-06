@@ -8,7 +8,7 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   // 多页面：悬浮翻译窗（index.html）+ 设置窗（settings.html）
   build: {
-    rollupOptions: {
+    rolldownOptions: {
       input: {
         popup: fileURLToPath(new URL("./index.html", import.meta.url)),
         settings: fileURLToPath(new URL("./settings.html", import.meta.url)),

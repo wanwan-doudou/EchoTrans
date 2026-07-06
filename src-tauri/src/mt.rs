@@ -68,11 +68,7 @@ fn target_lang(text: &str) -> &'static str {
             other += 1;
         }
     }
-    if cjk > other {
-        "en"
-    } else {
-        "zh-Hans"
-    }
+    if cjk > other { "en" } else { "zh-Hans" }
 }
 
 pub async fn translate(text: &str) -> Result<String, String> {

@@ -49,7 +49,10 @@ async fn stream_chat<F>(
 where
     F: FnMut(&str),
 {
-    if cfg.api_base.trim().is_empty() || cfg.api_key.trim().is_empty() || cfg.model.trim().is_empty() {
+    if cfg.api_base.trim().is_empty()
+        || cfg.api_key.trim().is_empty()
+        || cfg.model.trim().is_empty()
+    {
         return Err("尚未配置接口地址、API Key 或模型，请在托盘图标 → 设置中填写".into());
     }
 
