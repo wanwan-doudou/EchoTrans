@@ -1,4 +1,4 @@
-# EchoTrans 发版脚本：签名构建安装包并生成自动更新清单 latest.json
+﻿# EchoTrans 发版脚本：签名构建安装包并生成自动更新清单 latest.json
 # 用法：在项目根目录执行 .\scripts\release.ps1
 # 前置：更新签名私钥位于 %USERPROFILE%\.tauri\echotrans.key（丢失将无法向老用户推送更新，请备份）
 
