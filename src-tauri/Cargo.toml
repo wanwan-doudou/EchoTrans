@@ -1,6 +1,6 @@
 [package]
 name = "echotrans"
-version = "0.4.2"
+version = "0.4.3"
 description = "连按三次 Ctrl+C 即时 AI 翻译"
 authors = ["doudou"]
 edition = "2024"
