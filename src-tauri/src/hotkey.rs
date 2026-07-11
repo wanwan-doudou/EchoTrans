@@ -11,6 +11,13 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition};
 
 use crate::{HotkeyState, config::ConfigState, mt, snip, translator};
 
+#[cfg(windows)]
+#[link(name = "user32")]
+unsafe extern "system" {
+    #[link_name = "GetClipboardSequenceNumber"]
+    fn get_clipboard_sequence_number() -> u32;
+}
+
 /// 翻译请求代际号：连续触发时，让旧的流式任务停止向弹窗推送
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 
@@ -115,8 +122,63 @@ enum Trigger {
     Snip,
 }
 
+#[derive(Clone, Copy)]
+enum CopySignal {
+    Keyboard,
+    Clipboard,
+}
+
+struct TripleCopyDetector {
+    count: u32,
+    last_copy: Option<Instant>,
+    last_keyboard: Option<Instant>,
+}
+
+impl TripleCopyDetector {
+    fn new() -> Self {
+        Self {
+            count: 0,
+            last_copy: None,
+            last_keyboard: None,
+        }
+    }
+
+    fn record(&mut self, signal: CopySignal, now: Instant) -> bool {
+        match signal {
+            CopySignal::Keyboard => self.last_keyboard = Some(now),
+            CopySignal::Clipboard => {
+                // 正常应用里一次 Ctrl+C 会同时产生按键和剪贴板信号，只计一次。
+                // Steam 等窗口可能屏蔽低级键盘钩子，此时用剪贴板变更作为兜底。
+                if self
+                    .last_keyboard
+                    .is_some_and(|at| now.duration_since(at) <= Duration::from_millis(200))
+                {
+                    return false;
+                }
+            }
+        }
+
+        if self
+            .last_copy
+            .is_some_and(|at| now.duration_since(at) <= TRIPLE_WINDOW)
+        {
+            self.count += 1;
+        } else {
+            self.count = 1;
+        }
+        self.last_copy = Some(now);
+
+        if self.count >= 3 {
+            self.count = 0;
+            return true;
+        }
+        false
+    }
+}
+
 pub fn start(app: AppHandle) {
     let (tx, rx) = mpsc::channel::<Trigger>();
+    let (copy_tx, copy_rx) = mpsc::channel::<CopySignal>();
 
     // 处理线程：键盘钩子回调内不能做耗时操作（Windows 会因超时移除钩子），
     // 触发信号丢到这里慢慢处理
@@ -130,14 +192,37 @@ pub fn start(app: AppHandle) {
         }
     });
 
+    let trigger_tx = tx.clone();
+    std::thread::spawn(move || {
+        let mut detector = TripleCopyDetector::new();
+        while let Ok(signal) = copy_rx.recv() {
+            if detector.record(signal, Instant::now()) {
+                let _ = trigger_tx.send(Trigger::Translate);
+            }
+        }
+    });
+
+    #[cfg(windows)]
+    {
+        let clipboard_tx = copy_tx.clone();
+        std::thread::spawn(move || {
+            let mut last_sequence = unsafe { get_clipboard_sequence_number() };
+            loop {
+                std::thread::sleep(Duration::from_millis(25));
+                let sequence = unsafe { get_clipboard_sequence_number() };
+                if sequence != 0 && sequence != last_sequence {
+                    last_sequence = sequence;
+                    let _ = clipboard_tx.send(CopySignal::Clipboard);
+                }
+            }
+        });
+    }
+
     // 监听线程：rdev 被动监听全局键盘，不拦截按键，系统复制功能不受影响
     std::thread::spawn(move || {
         let mut ctrl = false;
         let mut alt = false;
         let mut shift = false;
-        let mut count: u32 = 0;
-        let mut last = Instant::now();
-
         let result = rdev::listen(move |event: Event| match event.event_type {
             EventType::KeyPress(k) => {
                 match k {
@@ -148,18 +233,7 @@ pub fn start(app: AppHandle) {
                 }
 
                 if k == Key::KeyC && ctrl {
-                    // 三连 Ctrl+C 翻译
-                    let now = Instant::now();
-                    if now.duration_since(last) <= TRIPLE_WINDOW {
-                        count += 1;
-                    } else {
-                        count = 1;
-                    }
-                    last = now;
-                    if count >= 3 {
-                        count = 0;
-                        let _ = tx.send(Trigger::Translate);
-                    }
+                    let _ = copy_tx.send(CopySignal::Keyboard);
                 } else if let Ok(guard) = app.state::<HotkeyState>().0.lock() {
                     // 截屏翻译快捷键
                     if let Some(hk) = *guard {
@@ -417,5 +491,25 @@ mod tests {
         assert!(parse_hotkey("Alt+W+X").is_none());
         assert!(parse_hotkey("Alt+Alt+W").is_none());
         assert!(parse_hotkey("Ctrl+F1").is_none());
+    }
+
+    #[test]
+    fn clipboard_fallback_counts_when_keyboard_hook_is_missing() {
+        let start = Instant::now();
+        let mut detector = TripleCopyDetector::new();
+        assert!(!detector.record(CopySignal::Clipboard, start));
+        assert!(!detector.record(CopySignal::Clipboard, start + Duration::from_millis(100)));
+        assert!(detector.record(CopySignal::Clipboard, start + Duration::from_millis(200)));
+    }
+
+    #[test]
+    fn clipboard_update_does_not_double_count_keyboard_copy() {
+        let start = Instant::now();
+        let mut detector = TripleCopyDetector::new();
+        assert!(!detector.record(CopySignal::Keyboard, start));
+        assert!(!detector.record(CopySignal::Clipboard, start + Duration::from_millis(20)));
+        assert!(!detector.record(CopySignal::Keyboard, start + Duration::from_millis(100)));
+        assert!(!detector.record(CopySignal::Clipboard, start + Duration::from_millis(120)));
+        assert!(detector.record(CopySignal::Keyboard, start + Duration::from_millis(200)));
     }
 }
